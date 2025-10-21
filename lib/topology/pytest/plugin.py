@@ -377,7 +377,7 @@ def pytest_sessionstart(session):
         # Get a list of all testing directories
         search_paths = [
             realpath(arg) for arg in config.args if isdir(arg)
-        ]
+        ] or None
 
         injected_attr = parse_attribute_injection(
             injection_file,
