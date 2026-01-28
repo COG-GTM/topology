@@ -21,3 +21,4 @@ doc/reference/*
 
 # Virtual environment
 .venv/
+.python-version
