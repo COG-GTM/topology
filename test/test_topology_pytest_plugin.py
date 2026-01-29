@@ -30,6 +30,7 @@ from pytest import mark
 from six.moves import reload_module
 
 import topology.pytest.plugin
+from topology.pytest.plugin import TopologyPlugin
 from topology.manager import TopologyManager
 
 reload_module(topology.pytest.plugin)
@@ -98,3 +99,61 @@ def test_incompatible_marker_with_reason():
     Test that the incompatible marker is interpreted.
     """
     assert False
+
+
+def test_topology_plugin_verbose_default():
+    """
+    Test that TopologyPlugin verbose parameter defaults to False.
+    """
+    plugin = TopologyPlugin(
+        platform='debug',
+        injected_attr=None,
+        log_dir=None,
+        szn_dir=None,
+        platform_options={},
+        build_retries=0
+    )
+    assert plugin.verbose is False
+
+
+def test_topology_plugin_verbose_true():
+    """
+    Test that TopologyPlugin verbose parameter can be set to True.
+    """
+    plugin = TopologyPlugin(
+        platform='debug',
+        injected_attr=None,
+        log_dir=None,
+        szn_dir=None,
+        platform_options={},
+        build_retries=0,
+        verbose=True
+    )
+    assert plugin.verbose is True
+
+
+def test_topology_plugin_verbose_false():
+    """
+    Test that TopologyPlugin verbose parameter can be explicitly set to False.
+    """
+    plugin = TopologyPlugin(
+        platform='debug',
+        injected_attr=None,
+        log_dir=None,
+        szn_dir=None,
+        platform_options={},
+        build_retries=0,
+        verbose=False
+    )
+    assert plugin.verbose is False
+
+
+def test_topology_verbose_flag_passed_to_manager(topology, pytestconfig):
+    """
+    Test that the verbose flag from plugin is accessible via the topology
+    manager. This test verifies the integration between plugin and manager.
+    """
+    plugin = pytestconfig._topology_plugin
+    assert hasattr(plugin, 'verbose')
+    assert hasattr(topology, 'verbose')
+    assert topology.verbose == plugin.verbose
