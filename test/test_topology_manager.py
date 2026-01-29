@@ -123,3 +123,172 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_deprecated_unlink_raises_warning():
+    """
+    Test that the deprecated unlink() method raises a DeprecationWarning.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        topology.unlink('sw1:1 -- hs1:1')
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert 'deprecated' in str(w[0].message).lower()
+
+    topology.unbuild()
+
+
+def test_deprecated_relink_raises_warning():
+    """
+    Test that the deprecated relink() method raises a DeprecationWarning.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    topology.unlink('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        topology.relink('sw1:1 -- hs1:1')
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert 'deprecated' in str(w[0].message).lower()
+
+    topology.unbuild()
+
+
+def test_unlink_on_unbuilt_topology():
+    """
+    Test that the deprecated unlink() raises RuntimeError on unbuilt topology.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.unlink('sw1:1 -- hs1:1')
+
+    assert 'never built topology' in str(excinfo.value)
+
+
+def test_relink_on_unbuilt_topology():
+    """
+    Test that the deprecated relink() raises RuntimeError on unbuilt topology.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.relink('sw1:1 -- hs1:1')
+
+    assert 'never built topology' in str(excinfo.value)
+
+
+def test_link_operations_with_multiple_links():
+    """
+    Test unset_link and set_link with a topology containing multiple links.
+    """
+    import warnings
+
+    topodesc = """
+        sw1:1 -- hs1:1
+        sw1:2 -- hs2:1
+        sw1:3 -- hs3:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        topology.unset_link('sw1', '1', 'hs1', '1')
+        topology.unset_link('sw1', '2', 'hs2', '1')
+        topology.set_link('sw1', '1', 'hs1', '1')
+
+    topology.unbuild()
+
+
+def test_link_id_calculation_order_independence():
+    """
+    Test that link operations work regardless of node/port argument order.
+    The Link.calc_id method should produce the same ID regardless of order.
+    """
+    import warnings
+    from topology.graph import Link
+
+    link_id_1 = Link.calc_id('sw1', '1', 'hs1', '1')
+    link_id_2 = Link.calc_id('hs1', '1', 'sw1', '1')
+    assert link_id_1 == link_id_2
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        topology.unset_link('hs1', '1', 'sw1', '1')
+        topology.set_link('hs1', '1', 'sw1', '1')
+
+    topology.unbuild()
+
+
+def test_unbuild_on_unbuilt_topology():
+    """
+    Test that unbuild() raises RuntimeError when called on an unbuilt topology.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with pytest.raises(RuntimeError) as excinfo:
+        topology.unbuild()
+
+    assert 'never built topology' in str(excinfo.value)
+
+
+def test_build_twice_raises_error():
+    """
+    Test that building a topology twice raises RuntimeError.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        topology.build()
+
+    assert 'cannot build a topology twice' in str(excinfo.value).lower()
+
+    topology.unbuild()
+
+
+def test_is_built_returns_correct_state():
+    """
+    Test that is_built() returns the correct state before and after build.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    assert topology.is_built() is False
+
+    topology.build()
+    assert topology.is_built() is True
+
+    topology.unbuild()
