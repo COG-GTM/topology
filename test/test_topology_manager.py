@@ -305,3 +305,106 @@ def test_verbose_logging_node_count(caplog):
 
     log_messages = [record.message for record in caplog.records]
     assert any('2 nodes removed' in msg for msg in log_messages)
+
+
+def test_verbose_logging_resolve_complete_messages(caplog):
+    """
+    Test that all verbose logging messages are emitted during resolve().
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.resolve()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Resolving topology with engine "debug"' in msg
+               for msg in log_messages)
+    assert any('2 nodes' in msg for msg in log_messages)
+    assert any('1 links' in msg for msg in log_messages)
+    assert any('Loading platform plugin' in msg for msg in log_messages)
+    assert any('Topology resolution completed successfully' in msg
+               for msg in log_messages)
+
+
+def test_verbose_logging_empty_topology(caplog):
+    """
+    Test verbose logging with an empty topology (no nodes or links).
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Starting topology build phase' in msg for msg in log_messages)
+    assert any('0 nodes' in msg for msg in log_messages)
+    assert any('0 ports' in msg for msg in log_messages)
+
+    topology.unbuild()
+
+
+def test_verbose_logging_multiple_links(caplog):
+    """
+    Test verbose logging with multiple links between nodes.
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+        hs1:2 -- hs2:2
+        hs1:3 -- hs2:3
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    log_messages = [record.message for record in caplog.records]
+    link_messages = [msg for msg in log_messages if 'Adding link:' in msg]
+    assert len(link_messages) == 3
+
+    topology.unbuild()
+
+
+def test_verbose_with_options_parameter():
+    """
+    Test that verbose parameter works alongside options parameter.
+    """
+    topology = TopologyManager(
+        engine='debug',
+        options={'custom_option': 'value'},
+        verbose=True
+    )
+    assert topology.verbose is True
+    assert topology.options == {'custom_option': 'value'}
+
+
+def test_verbose_logging_resolve_then_build(caplog):
+    """
+    Test verbose logging when resolve() is called explicitly before build().
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.resolve()
+
+    resolve_messages = [record.message for record in caplog.records]
+    assert any('Resolving topology' in msg for msg in resolve_messages)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    build_messages = [record.message for record in caplog.records]
+    assert any('Starting topology build phase' in msg
+               for msg in build_messages)
+    assert not any('Resolving topology' in msg for msg in build_messages)
+
+    topology.unbuild()
