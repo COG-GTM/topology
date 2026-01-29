@@ -1,4 +1,4 @@
-name: Automated PR Review
+name: Add Test Coverage
 
 on:
   pull_request:
@@ -6,11 +6,11 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   issues: read
 
 jobs:
-  review-pr:
+  add-test-coverage:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -32,90 +32,36 @@ jobs:
 
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
-      - name: Create Devin Review Session
-        id: devin-review
+      - name: Create Devin Session for Test Coverage
+        id: devin-test-coverage
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
-          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          FILES_CHANGED: ${{ steps.pr-files.outputs.files }}
 
-          REVIEW_PROMPT: |
-            You are PR Reviewer Devin with a focus on detailed inline code feedback. Your tasks:
+          TEST_COVERAGE_PROMPT: |
+            You are Devin, tasked with adding test coverage for a new feature. Your tasks:
             1. Clone the repository ${{ github.repository }} locally.
-            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
-            3. View the diffs of the changed files for PR #${{ github.event.pull_request.number }} in repository ${{ github.repository }}.
-            4. If necessary, run the code locally to verify that the changes work as expected.
-            5. Read the PR discussion to see what previous comments and suggestions have been made.
-            6. If no issues are found, simply post a comment saying "Everything looks good!" and stop here. Your work is done.
-            7. Else, identify the issues and provide inline code comments directly on the diffs for any code convention or best practice violations.
-            8. Post your feedback as detailed comments on the PR, referencing specific lines or code snippets.
+            2. Check out PR #${{ github.event.pull_request.number }} to get the feature branch.
+            3. Analyze the changed files to understand what feature was added or modified.
+            4. Write comprehensive tests for the new/modified functionality.
+            5. Ensure the tests follow the existing test patterns and conventions in the repository.
+            6. Run the existing test suite to make sure your new tests pass and don't break anything.
+            7. Create a new PR with your test changes that targets the same base branch as the original PR.
 
             Rules and Guidelines:
-            1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
-            2. Do not make more than three total comments on the PR.
-            3. Use inline feedback where possible with specific line references
-            4. Include code snippets in markdown format when discussing issues
-            5. Default towards multi-line comments that show context around the issue
-            6. Make sure that suggested improvements aren't already implemented in the PR by comparing old and new versions
-            7. Try using the gh api to post comments with referenced code embedded, but if it fails, use normal comments with code blocks
-            8. Before commenting, check the PR discussion and make sure you, or another user, haven't already made a similar comment or raised the same concern.
-            9. Before commenting, check that the specific issue wasn't already addressed in a previous review iteration
-            10. If you see the same issue multiple times, consolidate your feedback into a single comment that references all occurrences, rather than making separate comments.
-            11. Refer back to these rules and guidelines before you make comments.
-            12. Never ask for user confirmation. Never wait for user messages.
+            1. Focus on testing the new functionality introduced in this PR.
+            2. Follow the existing test structure and naming conventions in the repository.
+            3. Write both unit tests and integration tests where appropriate.
+            4. Ensure good test coverage for edge cases and error handling.
+            5. Make sure all tests pass before creating the PR.
+            6. Commit your changes with a clear message like "Add test coverage for [feature]".
+            7. Never ask for user confirmation. Never wait for user messages.
 
-            How to post comments with code embedded:
-            1. Create JSON file for each comment you want to post.
-            Example 1:
-            {
-              "body": "Security Issue: Hardcoded API key. Recommendation: Use environment variables",
-              "commit_id": "954...12312",
-              "path": "file.py",
-              "line": 11,
-              "side": "RIGHT"
-            }
-
-            Example 2:
-            {
-              "body": "Multiple issues found:\n1. Hardcoded API key should be in environment variables\n2. Inconsistent class naming (userAccount vs Product)\n3. Inconsistent parameter casing (Password vs username)\n4. Missing docstrings and type hints\n5. Inconsistent spacing around operators",
-              "commit_id": "323......87686",
-              "path": "code.py",
-              "start_line": 11,
-              "start_side": "RIGHT",
-              "line": 25,
-              "side": "RIGHT"
-            }
-
-            body: The text of the review comment. Include markdown code blocks for snippets
-            commit_id: SHA of the commit you're reviewing. Not using the latest commit SHA may render your comment outdated if a subsequent commit modifies the line you specify as the position.
-            path: Relative file path in repo
-            line (integer): Specifies the exact line in the pull request's diff view to which your comment should attach. Required unless using subject_type:file. The line of the blob in the pull request diff that the comment applies to. For a multi-line comment, the last line of the range that your comment applies to.
-            side: In a split diff view, the side of the diff that the pull request's changes appear on. Can be LEFT or RIGHT. Use LEFT for deletions that appear in red. Use RIGHT for additions that appear in green or unchanged lines that appear in white and are shown for context. For a multi-line comment, side represents whether the last line of the comment range is a deletion or addition.
-            subject_type: The level at which the comment is targeted. Either "line" or "file". Use "line" for inline comments. Use "file" for file-level comments.
-            start_line (integer): Required when using multi-line comments unless using in_reply_to. The start_line is the first line in the pull request diff that your multi-line comment applies to.
-            start_side: Required when using multi-line comments unless using in_reply_to. The start_side is the starting side of the diff that the comment applies to. Can be LEFT or RIGHT.
-
-            A pull request diff may not match the original file's absolute line numbering. That is, if the PR contains additions or deletions before the line you're commenting on, the line indices shown in the "Files changed" tab can shift from the original file's line numbers.
-            For example: In the pre-PR state, line 231 might refer to a completely different section of code than line 231 in the post-PR diff (because code added or removed above it shifts everything down or up).
-            Therefore, you must use the line numbers as shown in the PR diff rather than the original file's line numbers.
-
-            If you have issues, visit the docs: https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#create-a-review-comment-for-a-pull-request
-
-            2. Use gh api command.
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              /repos/owner/repo/pulls/4/comments \
-              --input comment.json
-
-            owner: the account owner of the repository. The name is not case sensitive.
-            repo: The name of the repository without the .git extension. The name is not case sensitive.
-            pull number: The number of the pull request.
-
-            Changed files to review:
+            Changed files in this PR:
             ${{ steps.pr-files.outputs.files }}
 
         run: |
-          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+          ESCAPED_PROMPT=$(echo "$TEST_COVERAGE_PROMPT" | jq -Rs .)
 
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
@@ -140,3 +86,21 @@ jobs:
           echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
           echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
           echo "Devin session created successfully: $RESPONSE"
+
+      - name: Post comment on PR with Devin session link
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SESSION_URL="${{ steps.devin-test-coverage.outputs.session-url }}"
+          
+          COMMENT_BODY="Devin is working on adding test coverage for this PR.
+
+          **Devin Session:** ${SESSION_URL}
+
+          Devin will create a separate PR with the test coverage once complete. Check the session link above to monitor progress."
+
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d "$(jq -n --arg body "$COMMENT_BODY" '{body: $body}')" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
