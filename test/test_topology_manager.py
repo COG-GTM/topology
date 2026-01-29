@@ -123,3 +123,56 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_unset_link_on_unbuilt_topology():
+    """
+    Test that unset_link raises RuntimeError on an unbuilt topology.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with pytest.raises(RuntimeError) as excinfo:
+        topology.unset_link('sw1', '1', 'hs1', '1')
+
+    assert 'never built topology' in str(excinfo.value)
+
+
+def test_unset_link_on_built_topology():
+    """
+    Test that unset_link correctly delegates to platform.unlink() when built.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    topology.unset_link('sw1', '1', 'hs1', '1')
+
+    topology.unbuild()
+
+
+def test_set_link_on_built_topology():
+    """
+    Test that set_link correctly delegates to platform.relink() when built.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    topology.unset_link('sw1', '1', 'hs1', '1')
+    topology.set_link('sw1', '1', 'hs1', '1')
+
+    topology.unbuild()
+
+
+def test_set_link_on_unbuilt_topology():
+    """
+    Test that set_link raises RuntimeError when called on an unbuilt topology.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with pytest.raises(RuntimeError) as excinfo:
+        topology.set_link('sw1', '1', 'hs1', '1')
+
+    assert 'You cannot relink on a never built topology' in str(excinfo.value)
