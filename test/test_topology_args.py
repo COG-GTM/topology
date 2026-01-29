@@ -389,3 +389,128 @@ def test_multiple_obsolete_args_all_rejected(tmpdir):
         f'Expected SystemExit with code 2 for multiple obsolete arguments, '
         f'got {exc_info.value.code}'
     )
+
+
+def test_obsolete_args_case_sensitivity(tmpdir):
+    """
+    Test that case variations of obsolete arguments are also rejected.
+    argparse is case-sensitive by default, so --Plot-Dir should be rejected
+    as an unrecognized argument (not matched to any valid argument).
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    case_variations = [
+        '--Plot-Dir',
+        '--PLOT-DIR',
+        '--Plot-Format',
+        '--PLOT-FORMAT',
+        '--Nml-Dir',
+        '--NML-DIR',
+    ]
+
+    for arg in case_variations:
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args([str(topology), arg, '/tmp/value'])
+            finally:
+                sys.stderr = old_stderr
+        assert exc_info.value.code == 2, (
+            f'Expected SystemExit with code 2 for case variation {arg}, '
+            f'got {exc_info.value.code}'
+        )
+
+
+def test_obsolete_args_prefix_not_matched(tmpdir):
+    """
+    Test that partial/prefix versions of obsolete argument names are rejected.
+    This ensures that argparse prefix matching doesn't accidentally accept
+    shortened forms of the removed arguments.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    prefix_variations = [
+        '--plot',
+        '--plot-',
+        '--nml',
+        '--nml-',
+    ]
+
+    for arg in prefix_variations:
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args([str(topology), arg, '/tmp/value'])
+            finally:
+                sys.stderr = old_stderr
+        assert exc_info.value.code == 2, (
+            f'Expected SystemExit with code 2 for prefix {arg}, '
+            f'got {exc_info.value.code}'
+        )
+
+
+def test_obsolete_args_do_not_consume_topology_file(tmpdir):
+    """
+    Test that obsolete arguments placed before the topology file don't
+    interfere with the required positional argument parsing.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    with pytest.raises(SystemExit) as exc_info:
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+        try:
+            parse_args(['--plot-dir', '/tmp/plots', str(topology)])
+        finally:
+            sys.stderr = old_stderr
+    assert exc_info.value.code == 2, (
+        f'Expected SystemExit with code 2 when obsolete arg precedes '
+        f'topology file, got {exc_info.value.code}'
+    )
+
+
+def test_obsolete_args_exit_code_consistency(tmpdir):
+    """
+    Test that all obsolete arguments produce the same exit code (2) which
+    is the standard argparse exit code for unrecognized arguments.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    obsolete_args = ['--plot-dir', '--plot-format', '--nml-dir']
+    exit_codes = []
+
+    for arg in obsolete_args:
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args([str(topology), arg, 'value'])
+            finally:
+                sys.stderr = old_stderr
+        exit_codes.append(exc_info.value.code)
+
+    assert all(code == 2 for code in exit_codes), (
+        f'All obsolete arguments should produce exit code 2, '
+        f'but got: {dict(zip(obsolete_args, exit_codes))}'
+    )
+    assert len(set(exit_codes)) == 1, (
+        'All obsolete arguments should produce consistent exit codes'
+    )
