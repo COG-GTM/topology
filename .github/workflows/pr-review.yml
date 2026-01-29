@@ -18,12 +18,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get PR files and generate test plan
-        id: test-plan
+      - name: Get PR files
+        id: pr-files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch changed files with their patch/diff info
           FILES_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files")
 
@@ -32,100 +31,87 @@ jobs:
             exit 1
           fi
 
-          # Extract filenames
-          FILES=$(echo "$FILES_JSON" | jq -r '.[].filename')
           FILES_JSON_ARRAY=$(echo "$FILES_JSON" | jq -r '[.[].filename] | @json')
+          echo "files=$FILES_JSON_ARRAY" >> $GITHUB_OUTPUT
 
-          # Generate test plan based on changed files
-          TEST_PLAN="## Test Plan for PR #${{ github.event.pull_request.number }}\n\n"
-          TEST_PLAN+="The following test cases should be implemented to cover the changes in this PR:\n\n"
+      - name: Create Devin session to analyze PR and generate test plan
+        id: devin-session
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          FILES_CHANGED: ${{ steps.pr-files.outputs.files }}
 
-          FILE_COUNT=1
-          for FILE in $FILES; do
-            # Skip non-code files and config files
-            if [[ "$FILE" == *.md ]] || [[ "$FILE" == *.txt ]] || [[ "$FILE" == *.json ]] || [[ "$FILE" == *.yml ]] || [[ "$FILE" == *.yaml ]] || [[ "$FILE" == .gitignore ]] || [[ "$FILE" == *.lock ]] || [[ "$FILE" == *.toml ]] || [[ "$FILE" == *.cfg ]] || [[ "$FILE" == *.ini ]]; then
-              continue
-            fi
+          ANALYSIS_PROMPT: |
+            You are Devin, tasked with analyzing a PR and generating a detailed test plan.
 
-            TEST_PLAN+="### ${FILE_COUNT}. \`${FILE}\`\n\n"
+            Repository: ${{ github.repository }}
+            PR Number: ${{ github.event.pull_request.number }}
+            Changed files: ${{ steps.pr-files.outputs.files }}
 
-            # Get the file extension to determine test type suggestions
-            EXT="${FILE##*.}"
+            Your tasks:
+            1. Clone the repository ${{ github.repository }} locally.
+            2. View PR #${{ github.event.pull_request.number }} to understand the changes.
+            3. Analyze the changed files to understand what feature was added or modified.
+            4. Generate a detailed test plan with specific test cases for each changed file.
+            5. Post a comment on PR #${{ github.event.pull_request.number }} with:
+               - A summary of what the PR does
+               - A detailed test plan with multiple specific test cases for each file
+               - For each test case, include: test name, description, expected behavior, and edge cases
+               - A prefilled Devin link (https://app.devin.ai/new?prompt=URL_ENCODED_PROMPT) that users can click to start a session to implement the tests
 
-            TEST_PLAN+="**Unit Tests:**\n"
-            TEST_PLAN+="- Test that all new/modified functions return expected values for valid inputs\n"
-            TEST_PLAN+="- Test that functions handle edge cases (empty inputs, null values, boundary conditions)\n"
-            TEST_PLAN+="- Test that functions raise appropriate exceptions for invalid inputs\n\n"
+            Guidelines for the test plan:
+            - Be specific to the actual code changes, not generic
+            - Include unit tests, integration tests, and error handling tests where appropriate
+            - Reference specific functions, classes, or methods that need testing
+            - Include edge cases and boundary conditions specific to the implementation
+            - The prefilled Devin prompt should include the full test plan and instructions to implement it
 
-            TEST_PLAN+="**Integration Tests:**\n"
-            TEST_PLAN+="- Test that the component integrates correctly with its dependencies\n"
-            TEST_PLAN+="- Test end-to-end workflows that involve this file\n\n"
+            Rules:
+            - Do NOT make any commits or pushes - only analyze and comment
+            - Never ask for user confirmation. Never wait for user messages.
+            - Post exactly one comment on the PR with the complete test plan
 
-            TEST_PLAN+="**Error Handling Tests:**\n"
-            TEST_PLAN+="- Test graceful handling of unexpected errors\n"
-            TEST_PLAN+="- Test error messages are informative and actionable\n\n"
+        run: |
+          ESCAPED_PROMPT=$(echo "$ANALYSIS_PROMPT" | jq -Rs .)
 
-            FILE_COUNT=$((FILE_COUNT + 1))
-          done
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
 
-          # If no code files were found, add a generic message
-          if [ "$FILE_COUNT" -eq 1 ]; then
-            TEST_PLAN+="No code files detected in this PR that require test coverage.\n"
+          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.detail')
+          if [ "$ERROR_MSG" != "null" ]; then
+            echo "Error creating Devin session: $ERROR_MSG"
+            exit 1
           fi
 
-          # Save test plan to output (escape for GitHub Actions)
-          echo "files=$FILES_JSON_ARRAY" >> $GITHUB_OUTPUT
-          
-          # Save test plan to a file to avoid escaping issues
-          echo -e "$TEST_PLAN" > /tmp/test_plan.md
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
 
-      - name: Post test plan comment with Devin prompt link
+          if [ -z "$SESSION_ID" ] || [ -z "$SESSION_URL" ]; then
+            echo "Error: Devin session details are missing from the response."
+            exit 1
+          fi
+
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
+          echo "Devin session created successfully: $RESPONSE"
+
+      - name: Post initial comment with Devin session link
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FILES="${{ steps.test-plan.outputs.files }}"
-          
-          # Read the test plan
-          TEST_PLAN=$(cat /tmp/test_plan.md)
+          SESSION_URL="${{ steps.devin-session.outputs.session-url }}"
 
-          # Create the Devin prompt for generating test code
-          DEVIN_PROMPT="Add test coverage for PR #${{ github.event.pull_request.number }} in repository ${{ github.repository }}.
+          COMMENT_BODY="Devin is analyzing this PR to generate a detailed test plan.
 
-          Tasks:
-          1. Clone the repository ${{ github.repository }} locally.
-          2. Check out PR #${{ github.event.pull_request.number }} to get the feature branch.
-          3. Analyze the changed files to understand what feature was added or modified.
-          4. Write comprehensive tests following the test plan below.
-          5. Ensure the tests follow the existing test patterns and conventions in the repository.
-          6. Run the existing test suite to make sure your new tests pass.
-          7. Create a new PR with your test changes.
+          **Devin Session:** ${SESSION_URL}
 
-          Changed files: ${FILES}
+          Once the analysis is complete, Devin will post a comment with:
+          - A summary of the PR changes
+          - A detailed test plan with specific test cases
+          - A link to start a Devin session to implement the tests"
 
-          Test Plan:
-          ${TEST_PLAN}
-
-          Guidelines:
-          - Follow the existing test structure and naming conventions
-          - Write both unit tests and integration tests where appropriate
-          - Ensure good test coverage for edge cases and error handling
-          - Make sure all tests pass before creating the PR"
-
-          # URL encode the prompt for the Devin link
-          ENCODED_PROMPT=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DEVIN_PROMPT'''))")
-
-          # Create the full comment body
-          COMMENT_BODY="${TEST_PLAN}
-
-          ---
-
-          ### Generate Test Code with Devin
-
-          Click the link below to start a Devin session that will implement the test cases above. You can modify the prompt before starting the session.
-
-          **[Start Devin Session to Generate Tests](https://app.devin.ai/new?prompt=${ENCODED_PROMPT})**"
-
-          # Post the comment
           curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
