@@ -98,3 +98,58 @@ def test_incompatible_marker_with_reason():
     Test that the incompatible marker is interpreted.
     """
     assert False
+
+
+def test_obsolete_pytest_flags_not_implemented(pytestconfig):
+    """
+    Test that obsolete pytest plugin flags are not implemented.
+
+    The following flags were documented but never implemented in the pytest
+    plugin. They were removed from documentation in v1.18.0+:
+    - --topology-nml-dir
+    - --topology-plot-dir
+    - --topology-plot-format
+
+    This test verifies these flags are not recognized by the pytest plugin,
+    confirming the documentation removal is accurate.
+    """
+    obsolete_flags = [
+        '--topology-nml-dir',
+        '--topology-plot-dir',
+        '--topology-plot-format',
+    ]
+
+    for flag in obsolete_flags:
+        try:
+            pytestconfig.getoption(flag)
+            raise AssertionError(
+                f'Flag {flag} should not be implemented in pytest plugin'
+            )
+        except ValueError:
+            pass
+
+
+def test_documented_pytest_flags_exist(pytestconfig):
+    """
+    Test that documented pytest plugin flags are properly registered.
+
+    This test verifies that the flags documented in doc/user.rst are
+    actually implemented in the pytest plugin.
+    """
+    documented_flags = [
+        '--topology-platform',
+        '--topology-inject',
+        '--topology-log-dir',
+        '--topology-szn-dir',
+        '--topology-platform-options',
+        '--topology-build-retries',
+        '--topology-group-by-topology',
+    ]
+
+    for flag in documented_flags:
+        try:
+            pytestconfig.getoption(flag)
+        except ValueError:
+            raise AssertionError(
+                f'Documented flag {flag} is not registered in pytest plugin'
+            )
