@@ -186,3 +186,206 @@ def test_main_no_deprecation_warnings(tmpdir):
         )
 
     assert result == 0
+
+
+def test_obsolete_args_error_message_content(tmpdir):
+    """
+    Test that the error message for obsolete arguments contains helpful
+    information about the unrecognized argument.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    obsolete_args = [
+        ('--plot-dir', '/tmp/plots'),
+        ('--plot-format', 'png'),
+        ('--nml-dir', '/tmp/nml'),
+    ]
+
+    for arg_name, arg_value in obsolete_args:
+        stderr_capture = StringIO()
+        with pytest.raises(SystemExit):
+            old_stderr = sys.stderr
+            sys.stderr = stderr_capture
+            try:
+                parse_args([str(topology), arg_name, arg_value])
+            finally:
+                sys.stderr = old_stderr
+
+        error_output = stderr_capture.getvalue()
+        assert 'unrecognized arguments' in error_output, (
+            f'Error message for {arg_name} should mention '
+            f'"unrecognized arguments"'
+        )
+        assert arg_name in error_output, (
+            f'Error message should contain the argument name {arg_name}'
+        )
+
+
+def test_obsolete_args_with_equals_syntax(tmpdir):
+    """
+    Test that obsolete arguments using the --arg=value syntax are also
+    rejected by the argument parser.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    obsolete_args_with_equals = [
+        '--plot-dir=/tmp/plots',
+        '--plot-format=png',
+        '--nml-dir=/tmp/nml',
+    ]
+
+    for arg in obsolete_args_with_equals:
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args([str(topology), arg])
+            finally:
+                sys.stderr = old_stderr
+        assert exc_info.value.code == 2, (
+            f'Expected SystemExit with code 2 for unrecognized argument '
+            f'{arg}, got {exc_info.value.code}'
+        )
+
+
+def test_obsolete_args_combined_with_valid_args(tmpdir):
+    """
+    Test that combining obsolete arguments with valid arguments still
+    results in rejection of the obsolete arguments.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    test_cases = [
+        ['-v', '--plot-dir', '/tmp/plots'],
+        ['--platform=debug', '--plot-format', 'png'],
+        ['--non-interactive', '--nml-dir', '/tmp/nml'],
+        ['-vvv', '--platform=debug', '--plot-dir', '/tmp/plots'],
+    ]
+
+    for args_list in test_cases:
+        full_args = [str(topology)] + args_list
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args(full_args)
+            finally:
+                sys.stderr = old_stderr
+        assert exc_info.value.code == 2, (
+            f'Expected SystemExit with code 2 for args {args_list}, '
+            f'got {exc_info.value.code}'
+        )
+
+
+def test_valid_args_still_work_after_obsolete_removal(tmpdir):
+    """
+    Regression test to ensure that all valid arguments still work correctly
+    after the removal of obsolete arguments.
+    """
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    log_dir = tmpdir.mkdir('logs')
+
+    parsed = parse_args([
+        str(topology),
+        '-v',
+        '--platform=debug',
+        '--log-dir', str(log_dir),
+        '--non-interactive',
+    ])
+
+    assert parsed.verbose == 1
+    assert parsed.platform == 'debug'
+    assert parsed.log_dir == str(log_dir)
+    assert parsed.non_interactive is True
+
+
+def test_valid_args_with_options_after_obsolete_removal(tmpdir):
+    """
+    Regression test to ensure that the --option argument still works
+    correctly after the removal of obsolete arguments.
+    """
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    parsed = parse_args([
+        str(topology),
+        '--option', 'key1=value1', 'key2=100', 'key3=true',
+    ])
+
+    assert parsed.options['key1'] == 'value1'
+    assert parsed.options['key2'] == 100
+    assert parsed.options['key3'] is True
+
+
+def test_help_contains_valid_args(tmpdir):
+    """
+    Test that the --help output still contains all valid arguments
+    after the removal of obsolete arguments.
+    """
+    from subprocess import run
+    from sys import executable
+
+    completed = run(
+        [executable, '-m', 'topology', '--help'],
+        encoding='utf-8',
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, 'topology --help failed'
+
+    valid_args = [
+        '--verbose',
+        '--version',
+        '--platform',
+        '--option',
+        '--log-dir',
+        '--inject',
+        '--non-interactive',
+    ]
+    for arg in valid_args:
+        assert arg in completed.stdout, (
+            f'Valid argument {arg} should appear in --help output'
+        )
+
+
+def test_multiple_obsolete_args_all_rejected(tmpdir):
+    """
+    Test that providing multiple obsolete arguments at once still results
+    in rejection (the parser should fail on the first unrecognized argument).
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    with pytest.raises(SystemExit) as exc_info:
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+        try:
+            parse_args([
+                str(topology),
+                '--plot-dir', '/tmp/plots',
+                '--plot-format', 'png',
+                '--nml-dir', '/tmp/nml',
+            ])
+        finally:
+            sys.stderr = old_stderr
+    assert exc_info.value.code == 2, (
+        f'Expected SystemExit with code 2 for multiple obsolete arguments, '
+        f'got {exc_info.value.code}'
+    )
