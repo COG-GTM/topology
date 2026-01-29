@@ -78,7 +78,7 @@ class TopologyPlugin:
 
     def __init__(
         self, platform, injected_attr, log_dir, szn_dir, platform_options,
-        build_retries
+        build_retries, verbose=False
     ):
         self.platform = platform
         self.injected_attr = injected_attr
@@ -86,6 +86,7 @@ class TopologyPlugin:
         self.szn_dir = szn_dir
         self.platform_options = platform_options
         self.build_retries = build_retries
+        self.verbose = verbose
         self.topomgr: TopologyManager = None
         self.curr_topology_hash: DeepHash = None
         self.curr_module_name: str = None
@@ -202,7 +203,8 @@ def topology(request):
     plugin.destroy_topology()
 
     topomgr = TopologyManager(
-        engine=plugin.platform, options=plugin.platform_options
+        engine=plugin.platform, options=plugin.platform_options,
+        verbose=plugin.verbose
     )
 
     plugin.topomgr = topomgr
@@ -340,6 +342,17 @@ def pytest_addoption(parser):
             'saved.'
         )
     )
+    group.addoption(
+        '--topology-verbose',
+        action='store_true',
+        default=False,
+        help=(
+            'Enable verbose logging during topology build and unbuild '
+            'phases. This provides detailed information about what the '
+            'framework is doing during these operations, useful for '
+            'debugging topology issues.'
+        )
+    )
 
 
 def pytest_sessionstart(session):
@@ -390,6 +403,9 @@ def pytest_sessionstart(session):
             .format(time() - start_time)
         )
 
+    # Get verbose option
+    verbose = config.getoption('--topology-verbose')
+
     # Create and register plugin
     config._topology_plugin = TopologyPlugin(
         platform,
@@ -397,7 +413,8 @@ def pytest_sessionstart(session):
         log_dir,
         szn_dir,
         parse_options(platform_options),
-        build_retries
+        build_retries,
+        verbose
     )
     config.pluginmanager.register(config._topology_plugin)
 
