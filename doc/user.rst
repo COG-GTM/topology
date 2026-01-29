@@ -558,20 +558,6 @@ Added pytest arguments
    Path to an attributes injection file, See the
    :ref:`Attribute Injection <attribute-injection>` section above.
 
-:``--topology-plot-dir``:
-   Directory to auto-plot topologies.
-   All topologies found will be plotted to this directory automatically.
-
-:``--topology-plot-format``:
-   Format for ploting topologies (default 'svg')
-   This option requires Graphviz installed.
-
-:``--topology-nml-dir``:
-   Directory to export topologies as NML XML.
-   All topologies found will be exported to NML XML to this directory
-   automatically.
-
-
 Added pytest markers
 ++++++++++++++++++++
 
