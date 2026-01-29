@@ -42,8 +42,8 @@ jobs:
 
           FILE_COUNT=1
           for FILE in $FILES; do
-            # Skip non-code files
-            if [[ "$FILE" == *.md ]] || [[ "$FILE" == *.txt ]] || [[ "$FILE" == *.json ]] || [[ "$FILE" == *.yml ]] || [[ "$FILE" == *.yaml ]]; then
+            # Skip non-code files and config files
+            if [[ "$FILE" == *.md ]] || [[ "$FILE" == *.txt ]] || [[ "$FILE" == *.json ]] || [[ "$FILE" == *.yml ]] || [[ "$FILE" == *.yaml ]] || [[ "$FILE" == .gitignore ]] || [[ "$FILE" == *.lock ]] || [[ "$FILE" == *.toml ]] || [[ "$FILE" == *.cfg ]] || [[ "$FILE" == *.ini ]]; then
               continue
             fi
 
