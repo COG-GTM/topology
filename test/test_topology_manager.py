@@ -123,3 +123,135 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_deprecated_nml_property_raises_warning():
+    """
+    Test that the deprecated nml property raises a DeprecationWarning.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        graph = topology.nml
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert 'obsolete' in str(w[0].message).lower()
+
+    assert graph is topology.graph
+
+
+def test_resolve_on_built_topology_raises_error():
+    """
+    Test that resolve() raises RuntimeError when called on an already built
+    topology.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        topology.resolve()
+
+    assert 'cannot resolve an already built topology' in str(excinfo.value)
+
+    topology.unbuild()
+
+
+def test_get_returns_none_for_nonexistent_node():
+    """
+    Test that get() returns None for a node that doesn't exist.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    result = topology.get('nonexistent_node')
+    assert result is None
+
+    topology.unbuild()
+
+
+def test_parse_with_load_false():
+    """
+    Test that parse() with load=False returns parsed data without loading.
+    """
+    topology = TopologyManager(engine='debug')
+    data = topology.parse('sw1:1 -- hs1:1', load=False)
+
+    assert 'nodes' in data
+    assert 'links' in data
+    assert len(list(topology.graph.nodes())) == 0
+
+
+def test_unknown_platform_raises_error():
+    """
+    Test that initializing TopologyManager with unknown platform raises
+    RuntimeError.
+    """
+    with pytest.raises(RuntimeError) as excinfo:
+        TopologyManager(engine='nonexistent_platform')
+
+    assert 'unknown platform engine' in str(excinfo.value).lower()
+
+
+def test_set_link_on_unbuilt_topology():
+    """
+    Test that set_link() raises RuntimeError on unbuilt topology.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.set_link('sw1', '1', 'hs1', '1')
+
+    assert 'never built topology' in str(excinfo.value)
+
+
+def test_unset_link_on_unbuilt_topology():
+    """
+    Test that unset_link() raises RuntimeError on unbuilt topology.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.unset_link('sw1', '1', 'hs1', '1')
+
+    assert 'never built topology' in str(excinfo.value)
+
+
+def test_platform_property():
+    """
+    Test that the platform property returns the correct platform object.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    assert topology.platform is None
+
+    topology.build()
+    assert topology.platform is not None
+    assert topology.platform.debug_value == 'fordebug'
+
+    topology.unbuild()
+    assert topology.platform is None
+
+
+def test_engine_property():
+    """
+    Test that the engine property returns the correct engine name.
+    """
+    topology = TopologyManager(engine='debug')
+    assert topology.engine == 'debug'
