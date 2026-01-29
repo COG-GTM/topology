@@ -514,3 +514,146 @@ def test_obsolete_args_exit_code_consistency(tmpdir):
     assert len(set(exit_codes)) == 1, (
         'All obsolete arguments should produce consistent exit codes'
     )
+
+
+def test_obsolete_args_with_special_value_types(tmpdir):
+    """
+    Test that obsolete arguments with various special value types
+    (paths with spaces, empty values, unicode) are still rejected.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    special_values = [
+        ('--plot-dir', '/path/with spaces/plots'),
+        ('--plot-dir', ''),
+        ('--plot-format', 'png\u00e9'),
+        ('--nml-dir', '/tmp/nml/\u4e2d\u6587'),
+        ('--plot-dir', '/tmp/path with\ttab'),
+    ]
+
+    for arg_name, arg_value in special_values:
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args([str(topology), arg_name, arg_value])
+            finally:
+                sys.stderr = old_stderr
+        assert exc_info.value.code == 2, (
+            f'Expected SystemExit with code 2 for {arg_name} with value '
+            f'{repr(arg_value)}, got {exc_info.value.code}'
+        )
+
+
+def test_obsolete_args_do_not_interfere_with_help(tmpdir):
+    """
+    Test that --help still works correctly and obsolete arguments
+    don't interfere with the help display.
+    """
+    from subprocess import run
+    from sys import executable
+
+    completed = run(
+        [executable, '-m', 'topology', '--help'],
+        encoding='utf-8',
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, 'topology --help should succeed'
+    assert 'topology' in completed.stdout.lower(), (
+        '--help output should contain program description'
+    )
+    assert '--plot-dir' not in completed.stdout, (
+        'Obsolete --plot-dir should not appear in help'
+    )
+    assert '--plot-format' not in completed.stdout, (
+        'Obsolete --plot-format should not appear in help'
+    )
+    assert '--nml-dir' not in completed.stdout, (
+        'Obsolete --nml-dir should not appear in help'
+    )
+
+
+def test_obsolete_args_do_not_interfere_with_version():
+    """
+    Test that --version still works correctly and obsolete arguments
+    don't interfere with the version display.
+    """
+    from subprocess import run
+    from sys import executable
+
+    completed = run(
+        [executable, '-m', 'topology', '--version'],
+        encoding='utf-8',
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, 'topology --version should succeed'
+    assert 'topology' in completed.stdout.lower() or 'v' in completed.stdout, (
+        '--version output should contain version information'
+    )
+
+
+def test_obsolete_args_stderr_format_consistency(tmpdir):
+    """
+    Test that the stderr error format is consistent across all obsolete
+    arguments, following argparse conventions.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    obsolete_args = [
+        ('--plot-dir', '/tmp/plots'),
+        ('--plot-format', 'png'),
+        ('--nml-dir', '/tmp/nml'),
+    ]
+
+    error_outputs = []
+    for arg_name, arg_value in obsolete_args:
+        stderr_capture = StringIO()
+        with pytest.raises(SystemExit):
+            old_stderr = sys.stderr
+            sys.stderr = stderr_capture
+            try:
+                parse_args([str(topology), arg_name, arg_value])
+            finally:
+                sys.stderr = old_stderr
+        error_outputs.append((arg_name, stderr_capture.getvalue()))
+
+    for arg_name, error_output in error_outputs:
+        assert 'usage:' in error_output.lower(), (
+            f'Error for {arg_name} should include usage information'
+        )
+        assert 'error:' in error_output.lower(), (
+            f'Error for {arg_name} should include error prefix'
+        )
+
+
+def test_obsolete_args_with_double_dash_separator(tmpdir):
+    """
+    Test that obsolete arguments after -- separator are treated as
+    positional arguments (standard argparse behavior).
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    with pytest.raises(SystemExit) as exc_info:
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+        try:
+            parse_args([str(topology), '--', '--plot-dir'])
+        finally:
+            sys.stderr = old_stderr
+    assert exc_info.value.code == 2, (
+        'Arguments after -- should be treated as positional and cause error'
+    )
