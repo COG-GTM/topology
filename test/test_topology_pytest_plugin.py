@@ -157,3 +157,51 @@ def test_topology_verbose_flag_passed_to_manager(topology, pytestconfig):
     assert hasattr(plugin, 'verbose')
     assert hasattr(topology, 'verbose')
     assert topology.verbose == plugin.verbose
+
+
+def test_topology_plugin_all_parameters():
+    """
+    Test TopologyPlugin initialization with all parameters including verbose.
+    """
+    plugin = TopologyPlugin(
+        platform='debug',
+        injected_attr={'test': 'value'},
+        log_dir='/tmp/logs',
+        szn_dir=['/tmp/szn'],
+        platform_options={'option1': 'value1'},
+        build_retries=3,
+        verbose=True
+    )
+    assert plugin.platform == 'debug'
+    assert plugin.injected_attr == {'test': 'value'}
+    assert plugin.log_dir == '/tmp/logs'
+    assert plugin.szn_dir == ['/tmp/szn']
+    assert plugin.platform_options == {'option1': 'value1'}
+    assert plugin.build_retries == 3
+    assert plugin.verbose is True
+
+
+def test_topology_plugin_verbose_attribute_type():
+    """
+    Test that TopologyPlugin verbose attribute is a boolean.
+    """
+    plugin_true = TopologyPlugin(
+        platform='debug',
+        injected_attr=None,
+        log_dir=None,
+        szn_dir=None,
+        platform_options={},
+        build_retries=0,
+        verbose=True
+    )
+    plugin_false = TopologyPlugin(
+        platform='debug',
+        injected_attr=None,
+        log_dir=None,
+        szn_dir=None,
+        platform_options={},
+        build_retries=0,
+        verbose=False
+    )
+    assert isinstance(plugin_true.verbose, bool)
+    assert isinstance(plugin_false.verbose, bool)
