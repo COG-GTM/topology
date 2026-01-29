@@ -89,3 +89,100 @@ def test_args(tmpdir):
 
     ddiff = DeepDiff(parsed.options, expected)
     assert not ddiff
+
+
+def test_obsolete_args_removed(tmpdir):
+    """
+    Test that obsolete CLI arguments (--plot-dir, --plot-format, --nml-dir)
+    are no longer recognized by the argument parser.
+    """
+    from io import StringIO
+    import sys
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    obsolete_args = [
+        ('--plot-dir', '/tmp/plots'),
+        ('--plot-format', 'png'),
+        ('--nml-dir', '/tmp/nml'),
+    ]
+
+    for arg_name, arg_value in obsolete_args:
+        with pytest.raises(SystemExit) as exc_info:
+            old_stderr = sys.stderr
+            sys.stderr = StringIO()
+            try:
+                parse_args([str(topology), arg_name, arg_value])
+            finally:
+                sys.stderr = old_stderr
+        assert exc_info.value.code == 2, (
+            f'Expected SystemExit with code 2 for unrecognized argument '
+            f'{arg_name}, got {exc_info.value.code}'
+        )
+
+
+def test_help_does_not_contain_obsolete_args(tmpdir):
+    """
+    Test that the --help output does not contain references to obsolete
+    arguments (--plot-dir, --plot-format, --nml-dir).
+    """
+    from subprocess import run
+    from sys import executable
+
+    topology = tmpdir.join('topology.szn')
+    topology.write('')
+
+    completed = run(
+        [executable, '-m', 'topology', '--help'],
+        encoding='utf-8',
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, 'topology --help failed'
+
+    obsolete_args = ['--plot-dir', '--plot-format', '--nml-dir']
+    for arg in obsolete_args:
+        assert arg not in completed.stdout, (
+            f'Obsolete argument {arg} should not appear in --help output'
+        )
+
+
+def test_main_no_deprecation_warnings(tmpdir):
+    """
+    Test that the main function runs without emitting deprecation warnings
+    for the removed obsolete arguments.
+    """
+    import warnings
+    from topology import args, __main__ as main
+
+    test_topology = """\
+# Nodes
+[type=host name="Host 1"] hs1
+"""
+
+    topology = tmpdir.join('topology.szn')
+    topology.write(test_topology)
+
+    arguments = ['--platform=debug', '--non-interactive', str(topology)]
+    parsed_args = args.parse_args(arguments)
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = main.main(parsed_args)
+
+        deprecation_warnings = [
+            warning for warning in w
+            if issubclass(warning.category, DeprecationWarning)
+            and any(
+                arg in str(warning.message)
+                for arg in ['--plot-dir', '--nml-dir']
+            )
+        ]
+
+        assert len(deprecation_warnings) == 0, (
+            f'Expected no deprecation warnings for obsolete arguments, '
+            f'but got: {[str(w.message) for w in deprecation_warnings]}'
+        )
+
+    assert result == 0
