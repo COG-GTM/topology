@@ -24,6 +24,8 @@ See http://pythontesting.net/framework/pytest/pytest-introduction/#fixtures
 from __future__ import unicode_literals, absolute_import
 from __future__ import print_function, division
 
+import logging
+
 import pytest  # noqa
 from deepdiff import DeepDiff
 
@@ -123,3 +125,183 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_verbose_parameter_default():
+    """
+    Test that verbose parameter defaults to False.
+    """
+    topology = TopologyManager(engine='debug')
+    assert topology.verbose is False
+
+
+def test_verbose_parameter_true():
+    """
+    Test that verbose parameter can be set to True.
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    assert topology.verbose is True
+
+
+def test_verbose_parameter_false():
+    """
+    Test that verbose parameter can be explicitly set to False.
+    """
+    topology = TopologyManager(engine='debug', verbose=False)
+    assert topology.verbose is False
+
+
+def test_verbose_logging_resolve(caplog):
+    """
+    Test that verbose logging is emitted during resolve() when verbose=True.
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.resolve()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Resolving topology with engine "debug"' in msg
+               for msg in log_messages)
+    assert any('Loading platform plugin' in msg for msg in log_messages)
+
+
+def test_verbose_logging_build(caplog):
+    """
+    Test that verbose logging is emitted during build() when verbose=True.
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Starting topology build phase' in msg for msg in log_messages)
+    assert any('Build stage: pre_build' in msg for msg in log_messages)
+    assert any('Build stage: add_node' in msg for msg in log_messages)
+    assert any('Adding node: hs1' in msg for msg in log_messages)
+    assert any('Adding node: hs2' in msg for msg in log_messages)
+    assert any('Build stage: add_biport' in msg for msg in log_messages)
+    assert any('Build stage: add_bilink' in msg for msg in log_messages)
+    assert any('Build stage: post_build' in msg for msg in log_messages)
+    assert any('Topology build completed successfully' in msg
+               for msg in log_messages)
+
+    topology.unbuild()
+
+
+def test_verbose_logging_unbuild(caplog):
+    """
+    Test that verbose logging is emitted during unbuild() when verbose=True.
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+    topology.build()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.unbuild()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Starting topology unbuild phase' in msg
+               for msg in log_messages)
+    assert any('Calling platform destroy hook' in msg for msg in log_messages)
+    assert any('Topology unbuild completed successfully' in msg
+               for msg in log_messages)
+
+
+def test_verbose_false_no_logging(caplog):
+    """
+    Test that no verbose logging is emitted when verbose=False (default).
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=False)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+        topology.unbuild()
+
+    log_messages = [record.message for record in caplog.records]
+    assert not any('Starting topology build phase' in msg
+                   for msg in log_messages)
+    assert not any('Build stage:' in msg for msg in log_messages)
+    assert not any('Starting topology unbuild phase' in msg
+                   for msg in log_messages)
+
+
+def test_verbose_logging_port_details(caplog):
+    """
+    Test that verbose logging includes port details during build.
+    """
+    topodesc = """
+        hs1:eth0 -- hs2:eth0
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Adding port:' in msg and 'on node' in msg
+               for msg in log_messages)
+
+    topology.unbuild()
+
+
+def test_verbose_logging_link_details(caplog):
+    """
+    Test that verbose logging includes link details during build.
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('Adding link:' in msg and '<->' in msg for msg in log_messages)
+
+    topology.unbuild()
+
+
+def test_verbose_logging_node_count(caplog):
+    """
+    Test that verbose logging includes node and port counts in completion msg.
+    """
+    topodesc = """
+        hs1:1 -- hs2:1
+        hs1:2 -- hs2:2
+    """
+    topology = TopologyManager(engine='debug', verbose=True)
+    topology.parse(topodesc)
+
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.build()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('2 nodes' in msg and 'ports' in msg for msg in log_messages)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger='topology.manager'):
+        topology.unbuild()
+
+    log_messages = [record.message for record in caplog.records]
+    assert any('2 nodes removed' in msg for msg in log_messages)
