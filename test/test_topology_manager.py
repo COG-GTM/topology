@@ -123,3 +123,356 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_graph_attribute_with_dictmeta_load():
+    """
+    Test that the graph attribute works correctly when loading topology
+    via the load() method with dictionary metadata.
+    """
+    dictmeta = {
+        'nodes': [
+            {
+                'nodes': ['sw1', 'hs1'],
+                'attributes': {'type': 'switch'},
+                'parent': None
+            },
+            {
+                'nodes': ['hs1'],
+                'attributes': {'type': 'host', 'name': 'Host 1'},
+                'parent': None
+            }
+        ],
+        'ports': [
+            {
+                'ports': [('sw1', '1'), ('hs1', '1')],
+                'attributes': {}
+            }
+        ],
+        'links': [
+            {
+                'endpoints': (('sw1', '1'), ('hs1', '1')),
+                'attributes': {'speed': '1G'}
+            }
+        ]
+    }
+
+    topology = TopologyManager(engine='debug')
+    topology.load(dictmeta)
+
+    assert topology.graph is not None
+    assert isinstance(topology.graph, TopologyGraph)
+
+    nodes = list(topology.graph.nodes())
+    assert len(nodes) == 2
+
+    links = list(topology.graph.links())
+    assert len(links) == 1
+
+    link = links[0]
+    assert link.metadata.get('speed') == '1G'
+
+
+def test_graph_attribute_with_attribute_injection():
+    """
+    Test that the graph attribute correctly handles attribute injection.
+    """
+    topodesc = """
+        [type=switch] sw1
+        [type=host] hs1
+        sw1:1 -- hs1:1
+    """
+
+    inject = {
+        'nodes': {
+            'sw1': {'vlan': 100, 'management_ip': '10.0.0.1'},
+            'hs1': {'ip': '192.168.1.10'}
+        },
+        'ports': {},
+        'links': {}
+    }
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc, inject=inject)
+
+    sw1_node = topology.graph.get_node('sw1')
+    assert sw1_node.metadata.get('vlan') == 100
+    assert sw1_node.metadata.get('management_ip') == '10.0.0.1'
+
+    hs1_node = topology.graph.get_node('hs1')
+    assert hs1_node.metadata.get('ip') == '192.168.1.10'
+
+
+def test_graph_attribute_isolation_between_instances():
+    """
+    Test that graph attributes are isolated between different
+    TopologyManager instances.
+    """
+    topology1 = TopologyManager(engine='debug')
+    topology1.parse("""
+        [type=switch] sw1
+        [type=host] hs1
+        sw1:1 -- hs1:1
+    """)
+
+    topology2 = TopologyManager(engine='debug')
+    topology2.parse("""
+        [type=router] r1
+        [type=server] srv1
+        r1:1 -- srv1:1
+    """)
+
+    assert topology1.graph is not topology2.graph
+
+    nodes1 = [n.identifier for n in topology1.graph.nodes()]
+    nodes2 = [n.identifier for n in topology2.graph.nodes()]
+
+    assert 'sw1' in nodes1
+    assert 'hs1' in nodes1
+    assert 'r1' not in nodes1
+
+    assert 'r1' in nodes2
+    assert 'srv1' in nodes2
+    assert 'sw1' not in nodes2
+
+
+def test_graph_attribute_with_environment():
+    """
+    Test that the graph attribute correctly handles environment variables.
+    """
+    dictmeta = {
+        'environment': {
+            'NETWORK_NAME': 'test-network',
+            'VLAN_ID': '100'
+        },
+        'nodes': [
+            {
+                'nodes': ['sw1'],
+                'attributes': {'type': 'switch'},
+                'parent': None
+            }
+        ],
+        'ports': [],
+        'links': []
+    }
+
+    topology = TopologyManager(engine='debug')
+    topology.load(dictmeta)
+
+    assert topology.graph.environment.get('NETWORK_NAME') == 'test-network'
+    assert topology.graph.environment.get('VLAN_ID') == '100'
+
+
+def test_graph_attribute_error_handling_nonexistent_node():
+    """
+    Test that accessing a non-existent node via graph raises appropriate error.
+    """
+    from topology.graph.exceptions import NotFound
+
+    topology = TopologyManager(engine='debug')
+    topology.parse("""
+        [type=switch] sw1
+    """)
+
+    with pytest.raises(NotFound):
+        topology.graph.get_node('nonexistent')
+
+
+def test_graph_attribute_error_handling_nonexistent_port():
+    """
+    Test that accessing a non-existent port via graph raises appropriate error.
+    """
+    from topology.graph.exceptions import NotFound
+
+    topology = TopologyManager(engine='debug')
+    topology.parse("""
+        [type=switch] sw1
+    """)
+
+    with pytest.raises(NotFound):
+        topology.graph.get_port_by_label('sw1', 'nonexistent')
+
+
+def test_graph_consistency_check():
+    """
+    Test that the graph consistency check works correctly.
+    """
+    graph = TopologyGraph()
+
+    graph.create_node('sw1', name='Switch 1')
+    graph.create_node('hs1', name='Host 1', type='host')
+
+    graph.create_port('1', 'sw1')
+    graph.create_port('1', 'hs1')
+
+    graph.create_link('sw1', '1', 'hs1', '1')
+
+    graph.check_consistency()
+
+    topology = TopologyManager(engine='debug')
+    topology.graph = graph
+    topology.build()
+
+    assert topology.get('sw1') is not None
+    assert topology.get('hs1') is not None
+
+    topology.unbuild()
+
+
+def test_graph_attribute_with_link_metadata():
+    """
+    Test that link metadata is correctly accessible via graph attribute
+    using the dictmeta load method.
+    """
+    dictmeta = {
+        'nodes': [
+            {
+                'nodes': ['sw1'],
+                'attributes': {'type': 'switch'},
+                'parent': None
+            },
+            {
+                'nodes': ['hs1'],
+                'attributes': {'type': 'host'},
+                'parent': None
+            }
+        ],
+        'ports': [
+            {
+                'ports': [('sw1', '1'), ('hs1', '1')],
+                'attributes': {}
+            }
+        ],
+        'links': [
+            {
+                'endpoints': (('sw1', '1'), ('hs1', '1')),
+                'attributes': {'speed': '10G', 'mtu': 9000}
+            }
+        ]
+    }
+
+    topology = TopologyManager(engine='debug')
+    topology.load(dictmeta)
+
+    links = list(topology.graph.links())
+    assert len(links) == 1
+
+    link = links[0]
+    assert link.metadata.get('speed') == '10G'
+    assert link.metadata.get('mtu') == 9000
+
+
+def test_graph_attribute_with_port_metadata():
+    """
+    Test that port metadata is correctly accessible via graph attribute
+    using the dictmeta load method.
+    """
+    dictmeta = {
+        'nodes': [
+            {
+                'nodes': ['sw1'],
+                'attributes': {'type': 'switch'},
+                'parent': None
+            },
+            {
+                'nodes': ['hs1'],
+                'attributes': {'type': 'host'},
+                'parent': None
+            }
+        ],
+        'ports': [
+            {
+                'ports': [('sw1', 'mgmt')],
+                'attributes': {'port_number': 5, 'speed': '1G'}
+            },
+            {
+                'ports': [('sw1', '1'), ('hs1', '1')],
+                'attributes': {}
+            }
+        ],
+        'links': [
+            {
+                'endpoints': (('sw1', '1'), ('hs1', '1')),
+                'attributes': {}
+            }
+        ]
+    }
+
+    topology = TopologyManager(engine='debug')
+    topology.load(dictmeta)
+
+    sw1_node = topology.graph.get_node('sw1')
+    mgmt_port = sw1_node.get_port_by_label('mgmt')
+
+    assert mgmt_port.metadata.get('port_number') == 5
+    assert mgmt_port.metadata.get('speed') == '1G'
+
+
+def test_graph_attribute_empty_topology():
+    """
+    Test that graph attribute works correctly with an empty topology.
+    """
+    topology = TopologyManager(engine='debug')
+
+    assert topology.graph is not None
+    assert isinstance(topology.graph, TopologyGraph)
+
+    nodes = list(topology.graph.nodes())
+    assert len(nodes) == 0
+
+    links = list(topology.graph.links())
+    assert len(links) == 0
+
+    ports = list(topology.graph.ports())
+    assert len(ports) == 0
+
+
+def test_graph_as_dict_representation():
+    """
+    Test that the graph can be converted to a dictionary representation.
+    """
+    topodesc = """
+        [type=switch name="Switch 1"] sw1
+        [type=host name="Host 1"] hs1
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+
+    graph_dict = topology.graph.as_dict()
+
+    assert 'nodes' in graph_dict
+    assert 'links' in graph_dict
+    assert 'ports' in graph_dict
+    assert 'environment' in graph_dict
+
+    assert 'sw1' in graph_dict['nodes']
+    assert 'hs1' in graph_dict['nodes']
+
+    assert graph_dict['nodes']['sw1']['metadata']['type'] == 'switch'
+    assert graph_dict['nodes']['hs1']['metadata']['type'] == 'host'
+
+
+def test_graph_attribute_has_methods():
+    """
+    Test that the graph has_* methods work correctly.
+    """
+    topodesc = """
+        [type=switch] sw1
+        [type=host] hs1
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+
+    assert topology.graph.has_node('sw1') is True
+    assert topology.graph.has_node('hs1') is True
+    assert topology.graph.has_node('nonexistent') is False
+
+    assert topology.graph.has_port_label('sw1', '1') is True
+    assert topology.graph.has_port_label('sw1', '999') is False
+
+    assert topology.graph.has_link('sw1', '1', 'hs1', '1') is True
+    assert topology.graph.has_link('sw1', '2', 'hs1', '2') is False
