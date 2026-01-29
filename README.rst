@@ -91,13 +91,7 @@ Changes
   for Node, Link and Port. TopologyGraph has the same API as the old
   NMLExtendedManager, thus backwards compatibility is preserved.
 
-- Drop support for NML and graphviz plot output which implies these pytest
-  plugin flags and CLI arguments now do nothing. Notice they might be removed
-  in a future release:
-
-  - --topology-nml-dir
-  - --topology-plot-dir
-  - --topology-plot-format
+- Drop support for NML and graphviz plot output.
 
 
 1.17.0 (2022-01-25)
