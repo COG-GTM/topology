@@ -98,3 +98,122 @@ def test_incompatible_marker_with_reason():
     Test that the incompatible marker is interpreted.
     """
     assert False
+
+
+def test_documented_pytest_flags_are_registered(pytestconfig):
+    """
+    Test that documented pytest plugin flags are properly registered.
+
+    This test verifies that the flags documented in doc/user.rst are
+    registered and can be retrieved without raising ValueError.
+    """
+    documented_flags = [
+        '--topology-platform',
+        '--topology-inject',
+        '--topology-log-dir',
+        '--topology-szn-dir',
+        '--topology-platform-options',
+        '--topology-build-retries',
+        '--topology-group-by-topology',
+        '--topology-topologies-file',
+    ]
+
+    for flag in documented_flags:
+        try:
+            pytestconfig.getoption(flag)
+        except ValueError:
+            raise AssertionError(
+                f'Documented flag {flag} is not registered in pytest plugin'
+            )
+
+
+def test_topology_build_retries_type(pytestconfig):
+    """
+    Test that --topology-build-retries is registered as an integer type.
+
+    This test verifies that the build retries option is properly typed
+    as an integer, which is important for the retry logic in the plugin.
+    """
+    value = pytestconfig.getoption('--topology-build-retries')
+    assert isinstance(value, int), (
+        f'--topology-build-retries should be int, got {type(value).__name__}'
+    )
+
+
+def test_topology_group_by_topology_is_boolean(pytestconfig):
+    """
+    Test that --topology-group-by-topology is registered as a boolean flag.
+
+    This test verifies that the group-by-topology option is properly typed
+    as a boolean, which is important for the grouping logic in the plugin.
+    """
+    value = pytestconfig.getoption('--topology-group-by-topology')
+    assert isinstance(value, bool), (
+        '--topology-group-by-topology should be bool, '
+        f'got {type(value).__name__}'
+    )
+
+
+def test_topology_szn_dir_accepts_multiple_values(pytestconfig):
+    """
+    Test that --topology-szn-dir can accept multiple values via append action.
+
+    This test verifies that the szn-dir option is configured to accept
+    multiple directory paths, which is documented behavior.
+    """
+    value = pytestconfig.getoption('--topology-szn-dir')
+    assert value is None or isinstance(value, list), (
+        '--topology-szn-dir should be None or list, '
+        f'got {type(value).__name__}'
+    )
+
+
+def test_topology_platform_options_accepts_multiple_values(pytestconfig):
+    """
+    Test that --topology-platform-options can accept multiple key=value pairs.
+
+    This test verifies that the platform-options option is configured to
+    accept multiple arguments, which is documented behavior.
+    """
+    value = pytestconfig.getoption('--topology-platform-options')
+    assert value is None or isinstance(value, list), (
+        f'--topology-platform-options should be None or list, '
+        f'got {type(value).__name__}'
+    )
+
+
+def test_topology_plugin_registered(pytestconfig):
+    """
+    Test that the topology plugin is properly registered with pytest.
+
+    This test verifies that the TopologyPlugin instance is accessible
+    via the config and has the expected attributes.
+    """
+    plugin = pytestconfig._topology_plugin
+    assert plugin is not None, 'Topology plugin should be registered'
+    assert plugin.__class__.__name__ == 'TopologyPlugin', (
+        'Plugin should be TopologyPlugin instance'
+    )
+
+    assert hasattr(plugin, 'platform'), 'Plugin should have platform attribute'
+    assert hasattr(plugin, 'log_dir'), 'Plugin should have log_dir attribute'
+    assert hasattr(plugin, 'szn_dir'), 'Plugin should have szn_dir attribute'
+    assert hasattr(plugin, 'build_retries'), (
+        'Plugin should have build_retries attribute'
+    )
+
+
+def test_topology_plugin_platform_matches_option(pytestconfig):
+    """
+    Test that the TopologyPlugin platform matches --topology-platform option.
+
+    This test verifies that the plugin is initialized with the correct
+    platform value from the command line option.
+    """
+    plugin = pytestconfig._topology_plugin
+    option_value = pytestconfig.getoption('--topology-platform')
+
+    assert plugin.platform == option_value, (
+        f'Plugin platform {plugin.platform!r} should match '
+        f'option value {option_value!r}'
+    )
