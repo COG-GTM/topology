@@ -1,4 +1,4 @@
-name: Generate Test Plan
+name: Generate Test Plan and Implement Tests
 
 on:
   pull_request:
@@ -34,14 +34,14 @@ jobs:
           FILES_JSON_ARRAY=$(echo "$FILES_JSON" | jq -r '[.[].filename] | @json')
           echo "files=$FILES_JSON_ARRAY" >> $GITHUB_OUTPUT
 
-      - name: Create Devin session to analyze PR and generate test plan
+      - name: Create Devin session to analyze PR, generate test plan, and implement tests
         id: devin-session
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_CHANGED: ${{ steps.pr-files.outputs.files }}
 
           ANALYSIS_PROMPT: |
-            You are Devin, tasked with analyzing a PR and generating a detailed test plan.
+            You are Devin, tasked with analyzing a PR, generating a test plan, and implementing the tests.
 
             Repository: ${{ github.repository }}
             PR Number: ${{ github.event.pull_request.number }}
@@ -51,24 +51,26 @@ jobs:
             1. Clone the repository ${{ github.repository }} locally.
             2. View PR #${{ github.event.pull_request.number }} to understand the changes.
             3. Analyze the changed files to understand what feature was added or modified.
-            4. Generate a detailed test plan with specific test cases for each changed file.
+            4. Generate a brief test plan summary (2-3 sentences describing what tests are needed).
             5. Post a comment on PR #${{ github.event.pull_request.number }} with:
-               - A summary of what the PR does
-               - A detailed test plan with multiple specific test cases for each file
-               - For each test case, include: test name, description, expected behavior, and edge cases
-               - A prefilled Devin link (https://app.devin.ai/new?prompt=URL_ENCODED_PROMPT) that users can click to start a session to implement the tests
+               - A brief summary of what the PR does (1-2 sentences)
+               - A short test plan summary (2-3 sentences describing the tests you will write)
+               - A note that you are now implementing the tests
+            6. Write comprehensive tests for the changed functionality.
+            7. Ensure the tests follow the existing test patterns and conventions in the repository.
+            8. Run the test suite to make sure your new tests pass.
+            9. Create a new PR with your test changes.
+            10. Post a follow-up comment on the original PR linking to the new test PR.
 
-            Guidelines for the test plan:
-            - Be specific to the actual code changes, not generic
+            Guidelines:
+            - Keep the test plan summary brief and actionable
+            - Focus on testing the actual code changes, not generic tests
             - Include unit tests, integration tests, and error handling tests where appropriate
-            - Reference specific functions, classes, or methods that need testing
-            - Include edge cases and boundary conditions specific to the implementation
-            - The prefilled Devin prompt should include the full test plan and instructions to implement it
+            - Make sure all tests pass before creating the PR
 
             Rules:
-            - Do NOT make any commits or pushes - only analyze and comment
             - Never ask for user confirmation. Never wait for user messages.
-            - Post exactly one comment on the PR with the complete test plan
+            - Post exactly one initial comment with the brief summary, then implement the tests
 
         run: |
           ESCAPED_PROMPT=$(echo "$ANALYSIS_PROMPT" | jq -Rs .)
@@ -103,14 +105,14 @@ jobs:
         run: |
           SESSION_URL="${{ steps.devin-session.outputs.session-url }}"
 
-          COMMENT_BODY="Devin is analyzing this PR to generate a detailed test plan.
+          COMMENT_BODY="Devin is analyzing this PR and will automatically implement test coverage.
 
           **Devin Session:** ${SESSION_URL}
 
-          Once the analysis is complete, Devin will post a comment with:
-          - A summary of the PR changes
-          - A detailed test plan with specific test cases
-          - A link to start a Devin session to implement the tests"
+          Devin will:
+          1. Analyze the changes and post a brief test plan summary
+          2. Implement the tests
+          3. Create a PR with the test coverage"
 
           curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
