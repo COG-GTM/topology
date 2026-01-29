@@ -431,9 +431,7 @@ as part of the Topology framework.
 
    $ topology --help
    usage: topology [-h] [-v] [--version] [--platform {}] [--non-interactive]
-                   [--show-build-commands] [--plot-dir PLOT_DIR]
-                   [--plot-format PLOT_FORMAT] [--nml-dir NML_DIR]
-                   [--inject INJECT]
+                   [--show-build-commands] [--inject INJECT]
                    topology
 
    Network Topology Framework using NML, with support for pytest.
@@ -449,10 +447,6 @@ as part of the Topology framework.
      --non-interactive     Just build the topology and exit
      --show-build-commands
                            Show commands executed in nodes during build
-     --plot-dir PLOT_DIR   Directory to auto-plot topologies
-     --plot-format PLOT_FORMAT
-                           Format for plotting topologies
-     --nml-dir NML_DIR     Directory to export topologies as NML XML
      --inject INJECT       Path to an attributes injection file
 
 You can run a topology and interact with their nodes:
@@ -557,19 +551,6 @@ Added pytest arguments
 :``--topology-inject``:
    Path to an attributes injection file, See the
    :ref:`Attribute Injection <attribute-injection>` section above.
-
-:``--topology-plot-dir``:
-   Directory to auto-plot topologies.
-   All topologies found will be plotted to this directory automatically.
-
-:``--topology-plot-format``:
-   Format for ploting topologies (default 'svg')
-   This option requires Graphviz installed.
-
-:``--topology-nml-dir``:
-   Directory to export topologies as NML XML.
-   All topologies found will be exported to NML XML to this directory
-   automatically.
 
 
 Added pytest markers

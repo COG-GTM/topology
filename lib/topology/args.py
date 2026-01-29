@@ -270,34 +270,6 @@ def parse_args(argv=None):
         help='Platform options'
     )
 
-    # Ploting options
-    parser.add_argument(
-        '--plot-dir',
-        default=None,
-        help=(
-            'Obsolete. No longer supported. Used in previous versions of '
-            'topology to specify the directory to autoplot topologies'
-        )
-    )
-    parser.add_argument(
-        '--plot-format',
-        default='svg',
-        help=(
-            'Obsolete. No longer supported. Used in previous versions of '
-            'topology to specify the plot format'
-        )
-    )
-
-    # Export options
-    parser.add_argument(
-        '--nml-dir',
-        default=None,
-        help=(
-            'Obsolete. No longer supported. Used in previous versions of '
-            'topology to specify the directory to export topologies as NML XML'
-        )
-    )
-
     # Logging options
     parser.add_argument(
         '--log-dir',
