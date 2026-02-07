@@ -24,15 +24,18 @@ See http://pythontesting.net/framework/pytest/pytest-introduction/#fixtures
 from __future__ import unicode_literals, absolute_import
 from __future__ import print_function, division
 
+import warnings
+
 import pytest  # noqa
 from deepdiff import DeepDiff
+from unittest.mock import patch
 
 # Reload module to properly measure coverage
 from six.moves import reload_module
 
 import topology.platforms.manager
 from topology.manager import TopologyManager
-from topology.graph import TopologyGraph
+from topology.graph import TopologyGraph, Link
 
 
 reload_module(topology.platforms.manager)
@@ -123,3 +126,237 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_relink_raises_deprecation_warning():
+    """
+    Test that relink() raises a DeprecationWarning since it is deprecated.
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    link_id = Link.calc_id('sw1', '1', 'hs1', '1')
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        topology.relink(link_id)
+
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert 'relink() is deprecated' in str(w[0].message)
+
+    topology.unbuild()
+
+
+def test_unlink_raises_deprecation_warning():
+    """
+    Test that unlink() raises a DeprecationWarning since it is deprecated.
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    link_id = Link.calc_id('sw1', '1', 'hs1', '1')
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        topology.unlink(link_id)
+
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert 'unlink() is deprecated' in str(w[0].message)
+
+    topology.unbuild()
+
+
+def test_relink_before_build_raises_runtime_error():
+    """
+    Test that relink() raises RuntimeError when called before build().
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+
+    link_id = Link.calc_id('sw1', '1', 'hs1', '1')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.relink(link_id)
+
+        assert 'never built topology' in str(excinfo.value)
+
+
+def test_unlink_before_build_raises_runtime_error():
+    """
+    Test that unlink() raises RuntimeError when called before build().
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+
+    link_id = Link.calc_id('sw1', '1', 'hs1', '1')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.unlink(link_id)
+
+        assert 'never built topology' in str(excinfo.value)
+
+
+def test_set_link_before_build_raises_runtime_error():
+    """
+    Test that set_link() raises RuntimeError when called before build().
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.set_link('sw1', '1', 'hs1', '1')
+
+        assert 'never built topology' in str(excinfo.value)
+
+
+def test_unset_link_before_build_raises_runtime_error():
+    """
+    Test that unset_link() raises RuntimeError when called before build().
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(RuntimeError) as excinfo:
+            topology.unset_link('sw1', '1', 'hs1', '1')
+
+        assert 'never built topology' in str(excinfo.value)
+
+
+def test_set_link_with_multiple_links():
+    """
+    Test that set_link() correctly targets the specified link when multiple
+    links exist in the topology.
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+        sw1:2 -- hs2:1
+        sw1:3 -- hs3:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    expected_link_id = Link.calc_id('sw1', '2', 'hs2', '1')
+
+    with patch.object(topology._platform, 'relink') as mock_relink:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            topology.set_link('sw1', '2', 'hs2', '1')
+
+        mock_relink.assert_called_once_with(expected_link_id)
+
+    topology.unbuild()
+
+
+def test_unset_link_with_multiple_links():
+    """
+    Test that unset_link() correctly targets the specified link when multiple
+    links exist in the topology.
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+        sw1:2 -- hs2:1
+        sw1:3 -- hs3:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    expected_link_id = Link.calc_id('sw1', '3', 'hs3', '1')
+
+    with patch.object(topology._platform, 'unlink') as mock_unlink:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            topology.unset_link('sw1', '3', 'hs3', '1')
+
+        mock_unlink.assert_called_once_with(expected_link_id)
+
+    topology.unbuild()
+
+
+def test_relink_calls_platform_relink():
+    """
+    Test that relink() correctly delegates to platform.relink() with the
+    provided link_id.
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    link_id = Link.calc_id('sw1', '1', 'hs1', '1')
+
+    with patch.object(topology._platform, 'relink') as mock_relink:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            topology.relink(link_id)
+
+        mock_relink.assert_called_once_with(link_id)
+
+    topology.unbuild()
+
+
+def test_unlink_calls_platform_unlink():
+    """
+    Test that unlink() correctly delegates to platform.unlink() with the
+    provided link_id.
+    """
+    topodesc = """
+        sw1:1 -- hs1:1
+    """
+
+    topology = TopologyManager(engine='debug')
+    topology.parse(topodesc)
+    topology.build()
+
+    link_id = Link.calc_id('sw1', '1', 'hs1', '1')
+
+    with patch.object(topology._platform, 'unlink') as mock_unlink:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            topology.unlink(link_id)
+
+        mock_unlink.assert_called_once_with(link_id)
+
+    topology.unbuild()
