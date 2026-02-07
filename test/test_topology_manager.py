@@ -123,3 +123,95 @@ def test_autoport():
 
     ddiff = DeepDiff(ports, expected)
     assert not ddiff
+
+
+def test_unknown_engine_raises_error():
+    """
+    Test that TopologyManager with unknown engine raises RuntimeError.
+    """
+    with pytest.raises(RuntimeError) as excinfo:
+        TopologyManager(engine='nonexistent_engine')
+
+    assert 'unknown platform engine' in str(excinfo.value).lower()
+
+
+def test_nml_property_deprecated():
+    """
+    Test that nml property returns graph and emits DeprecationWarning.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        nml_result = topology.nml
+
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert 'nml attribute is obsolete' in str(w[0].message)
+
+    assert nml_result is topology.graph
+
+
+def test_parse_with_load_false():
+    """
+    Test that parse() with load=False returns data without loading topology.
+    """
+    topology = TopologyManager(engine='debug')
+    data = topology.parse('sw1:1 -- hs1:1', load=False)
+
+    assert isinstance(data, dict)
+    assert 'nodes' in data
+    assert 'links' in data
+    assert len(list(topology.graph.nodes())) == 0
+    assert len(list(topology.graph.links())) == 0
+
+
+def test_resolve_on_built_topology_raises_error():
+    """
+    Test that resolve() raises RuntimeError on already built topology.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        topology.resolve()
+
+    assert 'cannot resolve an already built' in str(excinfo.value).lower()
+
+    topology.unbuild()
+
+
+def test_get_nonexistent_node_returns_none():
+    """
+    Test that get() returns None for non-existent node identifier.
+    """
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    result = topology.get('nonexistent_node')
+    assert result is None
+
+    topology.unbuild()
+
+
+def test_set_link_and_unset_link():
+    """
+    Test set_link() and unset_link() wrapper methods.
+    """
+    import warnings
+
+    topology = TopologyManager(engine='debug')
+    topology.parse('sw1:1 -- hs1:1')
+    topology.build()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        topology.unset_link('sw1', '1', 'hs1', '1')
+        topology.set_link('sw1', '1', 'hs1', '1')
+
+    topology.unbuild()
