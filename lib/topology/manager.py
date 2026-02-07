@@ -441,23 +441,6 @@ class TopologyManager(object):
             )
         self._platform.relink(link_id)
 
-    def unlink(self, link_id):
-        """
-        Unlink (break) a link specified in the topology.
-
-        :param str link_id: Link identifier to be recreated.
-        """
-        warn(
-            'unlink() is deprecated and will be removed in future releases.'
-            'Use unset_link() instead.',
-            DeprecationWarning
-        )
-        if not self._built:
-            raise RuntimeError(
-                'You cannot unlink on a never built topology.'
-            )
-        self._platform.unlink(link_id)
-
     def unset_link(self, node1_id, port1_label, node2_id, port2_label):
         """
         Unset a link between two nodes.
@@ -467,8 +450,12 @@ class TopologyManager(object):
         :param str node2_id: The second node identifier.
         :param str port2_label: The second port label.
         """
+        if not self._built:
+            raise RuntimeError(
+                'You cannot unlink on a never built topology.'
+            )
         link_id = Link.calc_id(node1_id, port1_label, node2_id, port2_label)
-        self.unlink(link_id)
+        self._platform.unlink(link_id)
 
     def set_link(self, node1_id, port1_label, node2_id, port2_label):
         """
