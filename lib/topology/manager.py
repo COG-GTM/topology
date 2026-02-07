@@ -102,23 +102,6 @@ class TopologyManager(object):
         """
         return self._platform
 
-    @property
-    def nml(self):
-        """
-        Topology no longer users NML specification. This method now returns
-        a :class:`topology.graph.TopologyGraph` object which was carefully
-        made to have the same interface as ExtendedNMLManger used to have.
-
-        This is obsolete and will be removed in future versions. Use the
-        :attr:`graph` attribute instead.
-        """
-        warn(
-            "nml attribute is obsolete and will be removed in future "
-            "versions. Use graph attribute instead.",
-            DeprecationWarning
-        )
-        return self.graph
-
     def load(self, dictmeta, inject=None):
         """
         Load a topology description in a dictionary format.
