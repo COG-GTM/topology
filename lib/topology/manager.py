@@ -79,7 +79,9 @@ class TopologyManager(object):
     :param dict options: Options to pass to the topology platform
     """
 
-    def __init__(self, engine=DEFAULT_PLATFORM, options=None, **kwargs):
+    def __init__(
+        self, engine=DEFAULT_PLATFORM, options=None, verbose=False, **kwargs
+    ):
         super(TopologyManager, self).__init__()
 
         if engine not in platforms():
@@ -90,6 +92,7 @@ class TopologyManager(object):
         self.options = options or OrderedDict()
         self.nodes = OrderedDict()
         self.ports = OrderedDict()
+        self.verbose = verbose
 
         self._platform = None
         self._built = False
@@ -286,9 +289,20 @@ class TopologyManager(object):
             raise RuntimeError(
                 'You cannot resolve an already built topology.'
             )
+
+        if self.verbose:
+            log.info('[VERBOSE] Starting topology resolution phase')
+            log.info('[VERBOSE] Loading platform engine: %s', self.engine)
+
         # Instance platform
         plugin = load_platform(self.engine)
         timestamp = datetime.now().replace(microsecond=0).isoformat()
+
+        if self.verbose:
+            log.info(
+                '[VERBOSE] Creating platform instance with timestamp: %s',
+                timestamp
+            )
 
         self._platform = plugin(
             timestamp, self.graph, **self.options
@@ -298,8 +312,14 @@ class TopologyManager(object):
             self._resolved = True
             return
 
+        if self.verbose:
+            log.info('[VERBOSE] Calling platform resolve method')
+
         self._platform.resolve()
         self._resolved = True
+
+        if self.verbose:
+            log.info('[VERBOSE] Topology resolution phase completed')
 
     def build(self):
         """
@@ -313,6 +333,9 @@ class TopologyManager(object):
                 'You cannot build a topology twice.'
             )
 
+        if self.verbose:
+            log.info('[VERBOSE] Starting topology build phase')
+
         if not self._resolved:
             # To keep backward compatibility, resolve the topology if it was
             # not resolved yet.
@@ -322,10 +345,16 @@ class TopologyManager(object):
 
         try:
             stage = 'pre_build'
+            if self.verbose:
+                log.info('[VERBOSE] Build stage: pre_build')
             self._platform.pre_build()
 
             stage = 'add_node'
+            if self.verbose:
+                log.info('[VERBOSE] Build stage: add_node')
             for node in self.graph.nodes():
+                if self.verbose:
+                    log.info('[VERBOSE] Adding node: %s', node.identifier)
                 enode = self._platform.add_node(node)
 
                 # Check that engine node implements the minimum interface
@@ -344,8 +373,15 @@ class TopologyManager(object):
                 self.ports[enode.identifier] = OrderedDict()
 
             stage = 'add_biport'
+            if self.verbose:
+                log.info('[VERBOSE] Build stage: add_biport')
             for node in self.graph.nodes():
                 for port in node.ports():
+                    if self.verbose:
+                        log.info(
+                            '[VERBOSE] Adding port %s to node %s',
+                            port.identifier, node.identifier
+                        )
                     eport = self._platform.add_biport(node, port)
 
                     # Check that engine port is of correct type
@@ -363,12 +399,22 @@ class TopologyManager(object):
                     self.ports[enode_id][label] = eport
 
             stage = 'add_bilink'
+            if self.verbose:
+                log.info('[VERBOSE] Build stage: add_bilink')
             for link in self.graph.links():
+                if self.verbose:
+                    log.info(
+                        '[VERBOSE] Adding link: %s:%s <-> %s:%s',
+                        link.node1.identifier, link.port1.identifier,
+                        link.node2.identifier, link.port2.identifier
+                    )
                 node_porta = (link.node1, link.port1)
                 node_portb = (link.node2, link.port2)
                 self._platform.add_bilink(node_porta, node_portb, link)
 
             stage = 'post_build'
+            if self.verbose:
+                log.info('[VERBOSE] Build stage: post_build')
 
             # Assign the port mapping to the enode so they know their mapping
             # and be able to change it if required
@@ -392,6 +438,9 @@ class TopologyManager(object):
 
         self._built = True
 
+        if self.verbose:
+            log.info('[VERBOSE] Topology build phase completed successfully')
+
     def unbuild(self):
         """
         Undo the topology.
@@ -404,15 +453,27 @@ class TopologyManager(object):
                 'You cannot unbuild and never built topology.'
             )
 
+        if self.verbose:
+            log.info('[VERBOSE] Starting topology unbuild phase')
+
         # Remove own reference to enodes
+        if self.verbose:
+            log.info('[VERBOSE] Removing references to engine nodes')
         self.nodes = OrderedDict()
 
         # Call platform destroy hook
+        if self.verbose:
+            log.info('[VERBOSE] Calling platform destroy hook')
         self._platform.destroy()
 
         # Explicitly delete platform
+        if self.verbose:
+            log.info('[VERBOSE] Deleting platform instance')
         del self._platform
         self._platform = None
+
+        if self.verbose:
+            log.info('[VERBOSE] Topology unbuild phase completed')
 
     def get(self, identifier):
         """
