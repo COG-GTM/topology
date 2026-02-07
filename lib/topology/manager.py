@@ -424,23 +424,6 @@ class TopologyManager(object):
         """
         return self.nodes.get(identifier, None)
 
-    def relink(self, link_id):
-        """
-        Relink back a link specified in the topology.
-
-        :param str link_id: Link identifier to be recreated.
-        """
-        warn(
-            'relink() is deprecated and will be removed in future releases.'
-            'Use set_link() instead.',
-            DeprecationWarning
-        )
-        if not self._built:
-            raise RuntimeError(
-                'You cannot relink on a never built topology.'
-            )
-        self._platform.relink(link_id)
-
     def unlink(self, link_id):
         """
         Unlink (break) a link specified in the topology.
@@ -479,8 +462,12 @@ class TopologyManager(object):
         :param str node2_id: The second node identifier.
         :param str port2_label: The second port label.
         """
+        if not self._built:
+            raise RuntimeError(
+                'You cannot relink on a never built topology.'
+            )
         link_id = Link.calc_id(node1_id, port1_label, node2_id, port2_label)
-        self.relink(link_id)
+        self._platform.relink(link_id)
 
     def _set_test_log(self, log):
         """
