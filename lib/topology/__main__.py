@@ -23,7 +23,6 @@ import sys
 import logging
 from io import StringIO
 from pathlib import Path
-from warnings import warn
 from atexit import register
 
 from pyszn.parser import find_topology_in_python
@@ -111,14 +110,6 @@ def main(args):
         register(unbuild)
 
         interact(mgr)
-
-    # Plot and export topology
-    if args.plot_dir:
-        warn('--plot-dir is no longer supported, ignoring', DeprecationWarning)
-
-    # Export topology as NML
-    if args.nml_dir:
-        warn('--nml-dir is no longer supported, ignoring', DeprecationWarning)
 
     return 0
 
