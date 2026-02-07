@@ -79,7 +79,8 @@ class TopologyManager(object):
     :param dict options: Options to pass to the topology platform
     """
 
-    def __init__(self, engine=DEFAULT_PLATFORM, options=None, **kwargs):
+    def __init__(self, engine=DEFAULT_PLATFORM, options=None, verbose=False,
+                 **kwargs):
         super(TopologyManager, self).__init__()
 
         if engine not in platforms():
@@ -90,6 +91,7 @@ class TopologyManager(object):
         self.options = options or OrderedDict()
         self.nodes = OrderedDict()
         self.ports = OrderedDict()
+        self.verbose = verbose
 
         self._platform = None
         self._built = False
@@ -286,6 +288,14 @@ class TopologyManager(object):
             raise RuntimeError(
                 'You cannot resolve an already built topology.'
             )
+
+        if self.verbose:
+            log.info(
+                'Resolving topology with platform engine "{}"'.format(
+                    self.engine
+                )
+            )
+
         # Instance platform
         plugin = load_platform(self.engine)
         timestamp = datetime.now().replace(microsecond=0).isoformat()
@@ -293,13 +303,25 @@ class TopologyManager(object):
         self._platform = plugin(
             timestamp, self.graph, **self.options
         )
+
+        if self.verbose:
+            log.info(
+                'Platform instance created with timestamp {}'.format(timestamp)
+            )
+
         if not hasattr(self._platform, 'resolve'):
             log.warning('Platform does not implement resolve method.')
             self._resolved = True
             return
 
+        if self.verbose:
+            log.info('Calling platform resolve method')
+
         self._platform.resolve()
         self._resolved = True
+
+        if self.verbose:
+            log.info('Topology resolution completed successfully')
 
     def build(self):
         """
@@ -318,14 +340,33 @@ class TopologyManager(object):
             # not resolved yet.
             self.resolve()
 
+        if self.verbose:
+            log.info('Starting topology build process')
+
         node_enode_map = OrderedDict()
 
         try:
             stage = 'pre_build'
+            if self.verbose:
+                log.info('Build stage: pre_build - Initializing platform')
             self._platform.pre_build()
+            if self.verbose:
+                log.info('Build stage: pre_build completed')
 
             stage = 'add_node'
+            if self.verbose:
+                log.info(
+                    'Build stage: add_node - Adding {} nodes'.format(
+                        len(list(self.graph.nodes()))
+                    )
+                )
             for node in self.graph.nodes():
+                if self.verbose:
+                    log.info(
+                        'Adding node "{}" with metadata: {}'.format(
+                            node.identifier, node.metadata
+                        )
+                    )
                 enode = self._platform.add_node(node)
 
                 # Check that engine node implements the minimum interface
@@ -343,9 +384,27 @@ class TopologyManager(object):
                 # Register empty port map
                 self.ports[enode.identifier] = OrderedDict()
 
+                if self.verbose:
+                    log.info(
+                        'Node "{}" added as engine node "{}"'.format(
+                            node.identifier, enode.identifier
+                        )
+                    )
+
+            if self.verbose:
+                log.info('Build stage: add_node completed')
+
             stage = 'add_biport'
+            if self.verbose:
+                log.info('Build stage: add_biport - Adding ports to nodes')
             for node in self.graph.nodes():
                 for port in node.ports():
+                    if self.verbose:
+                        log.info(
+                            'Adding port "{}" to node "{}"'.format(
+                                port.identifier, node.identifier
+                            )
+                        )
                     eport = self._platform.add_biport(node, port)
 
                     # Check that engine port is of correct type
@@ -362,13 +421,41 @@ class TopologyManager(object):
                     enode_id = node_enode_map[node.identifier]
                     self.ports[enode_id][label] = eport
 
+                    if self.verbose:
+                        log.info(
+                            'Port "{}" added as engine port "{}"'.format(
+                                port.identifier, eport
+                            )
+                        )
+
+            if self.verbose:
+                log.info('Build stage: add_biport completed')
+
             stage = 'add_bilink'
+            if self.verbose:
+                log.info(
+                    'Build stage: add_bilink - Creating {} links'.format(
+                        len(list(self.graph.links()))
+                    )
+                )
             for link in self.graph.links():
+                if self.verbose:
+                    log.info(
+                        'Creating link between {}:{} and {}:{}'.format(
+                            link.node1.identifier, link.port1.identifier,
+                            link.node2.identifier, link.port2.identifier
+                        )
+                    )
                 node_porta = (link.node1, link.port1)
                 node_portb = (link.node2, link.port2)
                 self._platform.add_bilink(node_porta, node_portb, link)
 
+            if self.verbose:
+                log.info('Build stage: add_bilink completed')
+
             stage = 'post_build'
+            if self.verbose:
+                log.info('Build stage: post_build - Finalizing topology')
 
             # Assign the port mapping to the enode so they know their mapping
             # and be able to change it if required
@@ -377,6 +464,9 @@ class TopologyManager(object):
                 enode.ports = self.ports[enode_id]
 
             self._platform.post_build()
+
+            if self.verbose:
+                log.info('Build stage: post_build completed')
 
         except (Exception, KeyboardInterrupt):
             e = exc_info()[1]
@@ -392,6 +482,13 @@ class TopologyManager(object):
 
         self._built = True
 
+        if self.verbose:
+            log.info(
+                'Topology build completed successfully with {} nodes'.format(
+                    len(self.nodes)
+                )
+            )
+
     def unbuild(self):
         """
         Undo the topology.
@@ -404,15 +501,29 @@ class TopologyManager(object):
                 'You cannot unbuild and never built topology.'
             )
 
+        if self.verbose:
+            log.info('Starting topology unbuild process')
+
         # Remove own reference to enodes
+        node_count = len(self.nodes)
         self.nodes = OrderedDict()
 
+        if self.verbose:
+            log.info(
+                'Cleared references to {} engine nodes'.format(node_count)
+            )
+
         # Call platform destroy hook
+        if self.verbose:
+            log.info('Calling platform destroy hook')
         self._platform.destroy()
 
         # Explicitly delete platform
         del self._platform
         self._platform = None
+
+        if self.verbose:
+            log.info('Topology unbuild completed successfully')
 
     def get(self, identifier):
         """
