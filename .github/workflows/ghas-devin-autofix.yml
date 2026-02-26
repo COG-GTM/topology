@@ -1,0 +1,149 @@
+name: Auto-resolve GHAS Vulnerabilities with Devin
+
+# ──────────────────────────────────────────────────────────────────────────────
+# This workflow automatically creates a Devin session to resolve vulnerabilities
+# flagged by GitHub Advanced Security (Code Scanning, Dependabot, Secret Scanning).
+#
+# Required setup:
+#   1. Add a repository secret named DEVIN_API_KEY with your Devin service-user
+#      API key (starts with cog_).  See: https://docs.devin.ai/api-reference/authentication
+#   2. (Optional) Add a repository variable named DEVIN_PROMPT with extra
+#      instructions to prepend to every Devin session prompt (e.g. coding
+#      standards, preferred libraries, repo-specific context).
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  code_scanning_alert:
+    types: [created, reopened]
+  dependabot_alert:
+    types: [created, reopened]
+  secret_scanning_alert:
+    types: [created, reopened]
+
+permissions:
+  security-events: read
+  contents: read
+
+jobs:
+  resolve-vulnerability:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Code Scanning ─────────────────────────────────────────────────────
+      - name: Build prompt for Code Scanning alert
+        if: github.event_name == 'code_scanning_alert'
+        env:
+          ALERT_URL: ${{ github.event.alert.html_url }}
+          ALERT_RULE_ID: ${{ github.event.alert.rule.id }}
+          ALERT_RULE_DESC: ${{ github.event.alert.rule.description }}
+          ALERT_RULE_SEVERITY: ${{ github.event.alert.rule.severity }}
+          ALERT_TOOL: ${{ github.event.alert.tool.name }}
+          ALERT_FILE: ${{ github.event.alert.most_recent_instance.location.path }}
+          ALERT_START_LINE: ${{ github.event.alert.most_recent_instance.location.start_line }}
+          ALERT_END_LINE: ${{ github.event.alert.most_recent_instance.location.end_line }}
+          ALERT_REF: ${{ github.event.alert.most_recent_instance.ref }}
+          ALERT_MESSAGE: ${{ github.event.alert.most_recent_instance.message.text }}
+        run: |
+          cat <<EOF > /tmp/prompt.txt
+          A code scanning vulnerability has been detected by GitHub Advanced Security in the repository ${{ github.repository }}.
+
+          **Alert Details:**
+          - **Rule:** ${ALERT_RULE_ID} — ${ALERT_RULE_DESC}
+          - **Severity:** ${ALERT_RULE_SEVERITY}
+          - **Tool:** ${ALERT_TOOL}
+          - **File:** ${ALERT_FILE} (lines ${ALERT_START_LINE}–${ALERT_END_LINE})
+          - **Branch:** ${ALERT_REF}
+          - **Message:** ${ALERT_MESSAGE}
+          - **Alert URL:** ${ALERT_URL}
+
+          Please fix this vulnerability by creating a pull request with the necessary code changes. Ensure you do not introduce regressions.
+          EOF
+
+      # ── Dependabot ─────────────────────────────────────────────────────────
+      - name: Build prompt for Dependabot alert
+        if: github.event_name == 'dependabot_alert'
+        env:
+          ALERT_URL: ${{ github.event.alert.html_url }}
+          ALERT_PACKAGE: ${{ github.event.alert.security_vulnerability.package.name }}
+          ALERT_ECOSYSTEM: ${{ github.event.alert.security_vulnerability.package.ecosystem }}
+          ALERT_SEVERITY: ${{ github.event.alert.security_vulnerability.severity }}
+          ALERT_VULNERABLE_RANGE: ${{ github.event.alert.security_vulnerability.vulnerable_version_range }}
+          ALERT_PATCHED_VERSION: ${{ github.event.alert.security_vulnerability.first_patched_version.identifier }}
+          ALERT_SUMMARY: ${{ github.event.alert.security_advisory.summary }}
+          ALERT_CVE: ${{ github.event.alert.security_advisory.cve_id }}
+          ALERT_GHSA: ${{ github.event.alert.security_advisory.ghsa_id }}
+          ALERT_MANIFEST: ${{ github.event.alert.dependency.manifest_path }}
+        run: |
+          cat <<EOF > /tmp/prompt.txt
+          A dependency vulnerability has been detected by GitHub Dependabot in the repository ${{ github.repository }}.
+
+          **Alert Details:**
+          - **Package:** ${ALERT_PACKAGE} (${ALERT_ECOSYSTEM})
+          - **Severity:** ${ALERT_SEVERITY}
+          - **Vulnerable range:** ${ALERT_VULNERABLE_RANGE}
+          - **Patched version:** ${ALERT_PATCHED_VERSION}
+          - **Summary:** ${ALERT_SUMMARY}
+          - **CVE:** ${ALERT_CVE}
+          - **GHSA:** ${ALERT_GHSA}
+          - **Manifest:** ${ALERT_MANIFEST}
+          - **Alert URL:** ${ALERT_URL}
+
+          Please update the affected dependency to the patched version and create a pull request. Make sure the update does not break any existing functionality.
+          EOF
+
+      # ── Secret Scanning ────────────────────────────────────────────────────
+      - name: Build prompt for Secret Scanning alert
+        if: github.event_name == 'secret_scanning_alert'
+        env:
+          ALERT_URL: ${{ github.event.alert.html_url }}
+          ALERT_SECRET_TYPE: ${{ github.event.alert.secret_type_display_name }}
+          ALERT_PUSH_PROTECTION_BYPASSED: ${{ github.event.alert.push_protection_bypassed }}
+        run: |
+          cat <<EOF > /tmp/prompt.txt
+          A secret has been detected in the repository ${{ github.repository }} by GitHub Secret Scanning.
+
+          **Alert Details:**
+          - **Secret type:** ${ALERT_SECRET_TYPE}
+          - **Push protection bypassed:** ${ALERT_PUSH_PROTECTION_BYPASSED}
+          - **Alert URL:** ${ALERT_URL}
+
+          Please investigate the leaked secret, remove it from the codebase, and ensure it has been rotated. Create a pull request with the remediation.
+          EOF
+
+      # ── Send to Devin ──────────────────────────────────────────────────────
+      - name: Create Devin session to resolve vulnerability
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_PROMPT: ${{ vars.DEVIN_PROMPT }}
+        run: |
+          # Prepend user-defined instructions if the DEVIN_PROMPT variable is set
+          if [ -n "$DEVIN_PROMPT" ]; then
+            FINAL_PROMPT=$(printf '%s\n\n%s' "$DEVIN_PROMPT" "$(cat /tmp/prompt.txt)")
+          else
+            FINAL_PROMPT=$(cat /tmp/prompt.txt)
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://api.devin.ai/v3/organizations/sessions" \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg prompt "$FINAL_PROMPT" '{prompt: $prompt}')")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            SESSION_ID=$(echo "$BODY" | jq -r '.session_id')
+            SESSION_URL=$(echo "$BODY" | jq -r '.url')
+            echo "### Devin session created" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Session ID:** \`$SESSION_ID\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Session URL:** $SESSION_URL" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Event:** \`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Failed to create Devin session" >> "$GITHUB_STEP_SUMMARY"
+            echo "**HTTP status:** $HTTP_CODE" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "$BODY" | jq . 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "$BODY" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
